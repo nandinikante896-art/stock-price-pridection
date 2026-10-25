@@ -81,9 +81,7 @@ def predict_next_day(model, feature_cols, df: pd.DataFrame):
     return float(predicted_price), float(latest_row["Close"])
 
 
-pred_price, last_close = predict_next_day(
-    model, feature_cols, df_used
-)
+
 
         # Prepare features using the latest available stock data
         latest_features = df_raw.copy()
