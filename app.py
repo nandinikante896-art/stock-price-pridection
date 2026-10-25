@@ -3,10 +3,6 @@ import yfinance as yf
 import pandas as pd
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
-
-
-def download_data(ticker: str, period: str = "5y") -> pd.DataFrame:
-
 def download_data(ticker: str, period: str = "5y") -> pd.DataFrame:
     ticker = ticker.strip().upper()
 
@@ -19,6 +15,31 @@ def download_data(ticker: str, period: str = "5y") -> pd.DataFrame:
 
     if data is None or data.empty:
         return pd.DataFrame()
+
+    # Handle columns returned as a MultiIndex
+    if isinstance(data.columns, pd.MultiIndex):
+        ticker_level = None
+
+        for level in range(data.columns.nlevels):
+            if ticker in data.columns.get_level_values(level):
+                ticker_level = level
+                break
+
+        if ticker_level is not None:
+            data = data.xs(
+                ticker,
+                axis=1,
+                level=ticker_level,
+                drop_level=True
+            )
+
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.get_level_values(0)
+
+    data.columns = [str(col) for col in data.columns]
+
+    return data
+
 
     # Flatten yfinance MultiIndex columns
     if isinstance(data.columns, pd.MultiIndex):
