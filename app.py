@@ -6,8 +6,44 @@ from sklearn.model_selection import train_test_split
 
 
 def download_data(ticker: str, period: str = "5y") -> pd.DataFrame:
-    data = yf.download(ticker, period=period)
+
+def download_data(ticker: str, period: str = "5y") -> pd.DataFrame:
+    ticker = ticker.strip().upper()
+
+    data = yf.download(
+        tickers=ticker,
+        period=period,
+        auto_adjust=False,
+        progress=False
+    )
+
+    if data is None or data.empty:
+        return pd.DataFrame()
+
+    # Flatten yfinance MultiIndex columns
+    if isinstance(data.columns, pd.MultiIndex):
+        ticker_level = None
+
+        for level in range(data.columns.nlevels):
+            if ticker in data.columns.get_level_values(level):
+                ticker_level = level
+                break
+
+        if ticker_level is not None:
+            data = data.xs(
+                ticker,
+                axis=1,
+                level=ticker_level,
+                drop_level=True
+            )
+
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.get_level_values(0)
+
+    data.columns = [str(col) for col in data.columns]
+
     return data
+
 
 
 def build_features(df: pd.DataFrame, predict_days_ahead: int = 1) -> pd.DataFrame:
@@ -45,49 +81,33 @@ def predict_next_day(model, feature_cols, df: pd.DataFrame):
     return float(predicted_price), float(latest_row["Close"])
 
 
-def main():
-    st.title("Stock Price Prediction App")
+pred_price, last_close = predict_next_day(
+    model, feature_cols, df_used
+)
 
-    st.sidebar.header("Settings")
-    ticker = st.sidebar.text_input("Stock Ticker", value="AAPL")
-    period = st.sidebar.selectbox("History Period", ["1y", "2y", "5y", "10y"], index=2)
-    predict_days_ahead = st.sidebar.slider(
-        "Predict days ahead", min_value=1, max_value=5, value=1
-    )
+        # Prepare features using the latest available stock data
+        latest_features = df_raw.copy()
 
-    if st.sidebar.button("Run Prediction"):
-        with st.spinner("Downloading data..."):
-            df_raw = download_data(ticker, period)
-
-        if df_raw.empty:
-            st.error("No data found. Please check the ticker symbol.")
-            return
-
-        st.subheader(f"Raw data for {ticker}")
-        st.write(df_raw.tail())
-
-        st.line_chart(df_raw["Close"])
-
-        with st.spinner("Building features and training model..."):
-            df_feat = build_features(df_raw, predict_days_ahead=predict_days_ahead)
-            if df_feat.empty:
-                st.error("Not enough data after feature engineering.")
-                return
-
-            model, feature_cols, df_used, score = train_model(df_feat)
-
-        st.subheader("Model Performance")
-        st.write(f"R² on test set: **{score:.4f}**")
-
-        pred_price, last_close = predict_next_day(model, feature_cols, df_used)
-
-        st.subheader("Prediction")
-        st.write(f"Last available close price: **{last_close:.2f}**")
-        st.write(
-            f"Predicted close price for the next {predict_days_ahead} day(s): **{pred_price:.2f}**"
+        latest_features["Close_shift_1"] = (
+            latest_features["Close"].shift(1)
+        )
+        latest_features["MA_5"] = (
+            latest_features["Close"].rolling(window=5).mean()
+        )
+        latest_features["MA_10"] = (
+            latest_features["Close"].rolling(window=10).mean()
+        )
+        latest_features["MA_20"] = (
+            latest_features["Close"].rolling(window=20).mean()
         )
 
+        latest_features = latest_features.dropna()
 
-if __name__ == "__main__":
-    main()
+        if latest_features.empty:
+            st.error("Not enough recent stock data to predict.")
+            return
+
+        pred_price, last_close = predict_next_day(
+            model, feature_cols, latest_features
+        )
 
